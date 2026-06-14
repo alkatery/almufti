@@ -456,11 +456,11 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZIAAAGBCAYAAABM
    لتفعيل التجميع من كل الأجهزة: املأ url و key من مشروع Supabase.
    إن تُركا فارغين، تُحفظ النتائج محليًّا على هذا الجهاز فقط (وضع مؤقّت للمعاينة). */
 const CLOUD = {
-  url:   '',          // مثل: https://xxxxxxxx.supabase.co
-  key:   '',          // المفتاح العام anon public
+  url:   'https://torkltmgjndodxwtaexn.supabase.co',
+  key:   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvcmtsdG1nam5kb2R4d3RhZXhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MTk0MzQsImV4cCI6MjA5Njk5NTQzNH0.Xr2uh-Xid4RmuseI03aWARpyjrMvCnirffSnWpcwiDw',
   table: 'results'
 };
-const STATS_PASSCODE = '1234';   // غيّره: رمز دخول لوحة المعلّم
+const STATS_PASSCODE = 'AL2islam';   // رمز دخول لوحة المعلّم
 const CLOUD_ON = () => !!(CLOUD.url && CLOUD.key);
 
 const logoImg = new Image(); logoImg.src = LOGO_SRC;

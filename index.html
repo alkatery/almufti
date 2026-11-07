@@ -23,6 +23,15 @@
   <div class="wrap">
     <p class="intro">اختر بابًا من الأبواب التالية، فتُجمع لك أسئلته في اختبارٍ واحد تُعرض بترتيبٍ عشوائيّ، وتظهر نتيجتك فور الانتهاء مع إمكانية تحميل شهادة باسمك.</p>
 
+    <div class="card resume" id="resume-box" style="display:none">
+      <div class="eyebrow">اختبار لم يكتمل</div>
+      <p id="resume-text"></p>
+      <div class="row">
+        <button class="btn btn-primary btn-sm" id="resume-go" type="button">متابعة من حيث توقّفت</button>
+        <button class="btn btn-ghost btn-sm" id="resume-drop" type="button">تجاهله والبدء من جديد</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="eyebrow">بياناتك</div>
       <div class="field">
@@ -124,7 +133,7 @@
         </div>
       </div>
       <div><span class="grade-tag" id="res-grade"></span></div>
-      <div class="result-name">أحسنت يا <b id="res-name"></b></div>
+      <div class="result-name"><span id="res-msg-pre">أحسنت يا </span><b id="res-name"></b><span class="result-msg-post" id="res-msg-post"></span></div>
 
       <div class="stats">
         <div class="stat ok"><div class="n" id="st-correct">0</div><div class="l">إجابة صحيحة</div></div>
@@ -136,6 +145,10 @@
         <button class="btn btn-pink" id="btn-cert">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
           تحميل الشهادة
+        </button>
+        <button class="btn btn-primary" id="btn-retry-wrong" style="display:none">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          أعد الأسئلة الخاطئة (<span id="retry-count">٠</span>)
         </button>
         <button class="btn btn-ghost" id="btn-restart">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>
@@ -195,6 +208,12 @@
       <div class="card" style="margin-top:18px">
         <div class="eyebrow">متوسّط النسبة حسب الباب / القسم</div>
         <div id="chapter-bars"></div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <div class="eyebrow">أصعب الأسئلة</div>
+        <div class="stats-note" id="hardest-note"></div>
+        <div id="hardest"></div>
       </div>
 
       <div class="card" style="margin-top:18px">

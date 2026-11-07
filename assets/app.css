@@ -124,6 +124,7 @@ body{
 .q-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .q-badge{font-size:.78rem;font-weight:700;padding:3px 11px;border-radius:20px}
 .q-badge.type{background:#EEE9DC;color:var(--ink-soft)}
+.q-badge.level{background:rgba(185,138,46,.12);color:var(--gold-deep)}
 .q-text{font-size:1.22rem;font-weight:500;color:var(--ink);line-height:1.95;margin-bottom:22px}
 .options{display:flex;flex-direction:column;gap:11px}
 .opt{
@@ -170,6 +171,7 @@ body{
 .rev-q .ic{flex:0 0 24px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;margin-top:3px}
 .rev.correct .ic{background:var(--correct)} .rev.wrong .ic{background:var(--wrong)}
 .rev-q .qn{color:var(--muted);font-weight:700;margin-left:4px}
+.rev-page{display:inline-block;margin-right:8px;font-size:.78rem;font-weight:700;color:var(--gold-deep);background:rgba(185,138,46,.12);border-radius:20px;padding:1px 9px;vertical-align:1px}
 .rev-opts{padding:0 16px 15px 51px;display:flex;flex-direction:column;gap:7px}
 .rev-opt{padding:9px 13px;border-radius:9px;font-size:.98rem;border:1px solid transparent;line-height:1.6}
 .rev-opt.c{background:var(--correct-bg);border-color:var(--correct-line);color:#155c3d;font-weight:500}
@@ -226,3 +228,10 @@ footer{text-align:center;color:var(--muted);font-size:.82rem;margin-top:34px;pad
 .dash-table tbody tr:hover{background:var(--card-warm)}
 .nowrap{white-space:nowrap}
 .muted-row{color:var(--muted);text-align:center;padding:18px}
+
+/* ===== استئناف الاختبار ===== */
+.resume{margin-top:22px;border:1.5px solid var(--gold-soft);background:var(--card-warm)}
+.resume p{color:var(--ink-soft);margin-bottom:14px}
+.resume .row{display:flex;gap:11px;flex-wrap:wrap}.resume .row .btn{flex:1;min-width:150px}
+.result-msg-post{display:block;font-family:var(--font-ui);font-size:.95rem;color:var(--muted);margin-top:6px}
+.hq-ans{font-size:.8rem;color:var(--correct);margin-top:3px}

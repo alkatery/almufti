@@ -14,8 +14,8 @@ const CLOUD_BASE = () => CLOUD.url.replace(/\/+$/,'');
 /* ============ المواد ============
    كل صفحة تعرّف SUBJECT_ID قبل تحميل هذا الملف، وبياناتها في data/<id>.js */
 const SUBJECTS = {
-  imla: { name:'الإملاء',      title:'تمارين الموطّأ في الإملاء', units:'الأبواب' },
-  sarf: { name:'الصرف الصغير', title:'تمارين الصرف الصغير',       units:'الأقسام' }
+  imla: { name:'الإملاء',      title:'تمارين الموطّأ في الإملاء', units:'الأبواب', unit:'الباب' },
+  sarf: { name:'الصرف الصغير', title:'تمارين الصرف الصغير',       units:'الأقسام', unit:'القسم' }
 };
 const SUBJECT_KEY = (typeof SUBJECT_ID!=='undefined' && SUBJECTS[SUBJECT_ID]) ? SUBJECT_ID : 'imla';
 const SUBJECT = SUBJECTS[SUBJECT_KEY];
@@ -32,7 +32,10 @@ const showScreen = id => { document.querySelectorAll('.screen').forEach(s=>s.cla
 const arDigits = s => String(s).replace(/[0-9]/g, d=>'٠١٢٣٤٥٦٧٨٩'[d]);
 
 /* ============ الحالة ============ */
-const state = { name:'', email:'', chapter:-1, questions:[], answers:[], cur:0 };
+const TF_TYPE = 'صواب أو خطأ';
+const PASS_PCT = 60;
+// mode: 'full' اختبار كامل يُحفظ ويمنح شهادة | 'retry' مراجعة الأخطاء (تدريب لا يُحفظ)
+const state = { name:'', email:'', chapter:-1, questions:[], answers:[], cur:0, mode:'full' };
 
 /* ============ بناء شبكة الأبواب ============ */
 function buildChapters(){
@@ -71,24 +74,84 @@ function validate(){
   if(state.chapter<0){ $('#err-chapter').classList.add('show'); ok=false; }
   return ok;
 }
+// qi: موضع السؤال في ملف البيانات — مفتاح ثابت لتحليل الأسئلة ولاستئناف الاختبار
+function makeQuestion(chIdx, qi, optionOrder){
+  const q = EXAM_DATA[chIdx].questions[qi];
+  // صواب/خطأ يبقى بترتيبه الأصلي؛ الاختيار من متعدد تُخلط خياراته
+  const options = optionOrder || (q.type===TF_TYPE ? q.options.slice() : shuffle(q.options));
+  return { qi, q:q.q, type:q.type, level:q.level, page:q.page, options, correct:q.correct };
+}
+function beginExam(questions, mode, answers, cur){
+  state.mode = mode;
+  state.questions = questions;
+  state.answers = answers || new Array(questions.length).fill(null);
+  state.cur = cur || 0;
+  const title = EXAM_DATA[state.chapter].title;
+  $('#exam-title').textContent = mode==='retry' ? 'مراجعة الأخطاء — '+title : title;
+  $('#q-total').textContent = arDigits(questions.length);
+  buildPalette();
+  renderQuestion();
+  showScreen('#screen-exam');
+  saveProgress();
+}
 function startExam(){
   if(!validate()) return;
   state.name=$('#in-name').value.trim();
   state.email=$('#in-email').value.trim();
   const ch=EXAM_DATA[state.chapter];
-  // عرض عشوائي للأسئلة + ترتيب عشوائي للخيارات (دون تغيير المحتوى)
-  state.questions = shuffle(ch.questions).map(q=>{
-    const opts = shuffle(q.options);
-    return { q:q.q, type:q.type, level:q.level, page:q.page, options:opts, correct:q.correct };
-  });
-  state.answers = new Array(state.questions.length).fill(null);
-  state.cur=0;
-  $('#exam-title').textContent = ch.title;
-  $('#q-total').textContent = arDigits(state.questions.length);
-  buildPalette();
-  renderQuestion();
-  showScreen('#screen-exam');
+  const qs = shuffle(ch.questions.map((_,qi)=>qi)).map(qi=>makeQuestion(state.chapter, qi));
+  beginExam(qs, 'full');
 }
+function startRetryWrong(){
+  const wrong = state.questions.filter((q,i)=>state.answers[i]!==q.correct);
+  if(!wrong.length) return;
+  beginExam(shuffle(wrong).map(q=>makeQuestion(state.chapter, q.qi)), 'retry');
+}
+
+/* ============ حفظ التقدّم واستئنافه (على جهاز الطالب فقط) ============ */
+const PROGRESS_KEY = 'almufti_progress_'+SUBJECT_KEY;
+const PROGRESS_TTL = 7*24*3600*1000;
+function saveProgress(){
+  try{
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify({
+      v:1, ts:Date.now(), name:state.name, email:state.email, chapter:state.chapter, mode:state.mode,
+      chapterTitle:EXAM_DATA[state.chapter].title,
+      items:state.questions.map(q=>({ qi:q.qi, o:q.options })), answers:state.answers, cur:state.cur
+    }));
+  }catch(e){}
+}
+function clearProgress(){ try{ localStorage.removeItem(PROGRESS_KEY); }catch(e){} }
+// يعيد بناء الاختبار المحفوظ، ويرفضه إن تغيّرت البيانات منذ حفظه
+function readProgress(){
+  let p; try{ p=JSON.parse(localStorage.getItem(PROGRESS_KEY)||'null'); }catch(e){ p=null; }
+  if(!p || p.v!==1 || !Array.isArray(p.items) || !p.items.length) return null;
+  const ch = EXAM_DATA[p.chapter];
+  if(Date.now()-p.ts > PROGRESS_TTL || !ch || ch.title!==p.chapterTitle){ clearProgress(); return null; }
+  const qs=[];
+  for(const it of p.items){
+    const src = ch.questions[it.qi];
+    if(!src || !Array.isArray(it.o) || it.o.length!==src.options.length || !it.o.every(o=>src.options.includes(o))){ clearProgress(); return null; }
+    qs.push(makeQuestion(p.chapter, it.qi, it.o.slice()));
+  }
+  const answers = (Array.isArray(p.answers) && p.answers.length===qs.length)
+    ? p.answers.map((a,i)=> qs[i].options.includes(a) ? a : null) : new Array(qs.length).fill(null);
+  return { p, qs, answers, cur: Math.min(Math.max(+p.cur||0,0), qs.length-1) };
+}
+function showResumeBox(){
+  const r = readProgress(), box=$('#resume-box');
+  if(!r){ box.style.display='none'; return; }
+  const done = r.answers.filter(a=>a!==null).length;
+  $('#resume-text').textContent = (r.p.mode==='retry'?'مراجعة الأخطاء — ':'')+r.p.chapterTitle
+    +' · أُجيب عن '+arDigits(done)+' من '+arDigits(r.qs.length);
+  box.style.display='block';
+}
+function resumeExam(){
+  const r = readProgress(); if(!r){ showResumeBox(); return; }
+  state.name=r.p.name||''; state.email=r.p.email||''; state.chapter=r.p.chapter;
+  $('#in-name').value=state.name; $('#in-email').value=state.email;
+  beginExam(r.qs, r.p.mode==='retry'?'retry':'full', r.answers, r.cur);
+}
+function discardProgress(){ clearProgress(); showResumeBox(); }
 
 /* ============ لوحة الأسئلة ============ */
 function buildPalette(){
@@ -96,7 +159,7 @@ function buildPalette(){
   state.questions.forEach((_,i)=>{
     const b=document.createElement('button');
     b.className='pnum'; b.type='button'; b.textContent=arDigits(i+1);
-    b.addEventListener('click',()=>{ state.cur=i; renderQuestion(); $('#palette').classList.remove('open'); });
+    b.addEventListener('click',()=>{ state.cur=i; renderQuestion(); saveProgress(); $('#palette').classList.remove('open'); });
     g.appendChild(b);
   });
 }
@@ -112,7 +175,8 @@ function renderQuestion(){
   const i=state.cur, q=state.questions[i];
   const card=$('#q-card');
   let html = `<div class="q-head">
-      <span class="q-badge type">${q.type}</span>
+      <span class="q-badge type">${escapeHTML(q.type)}</span>
+      ${q.level?`<span class="q-badge level">المستوى: ${escapeHTML(q.level)}</span>`:''}
     </div>
     <div class="q-text">${escapeHTML(q.q)}</div>
     <div class="options" role="radiogroup" aria-label="خيارات الإجابة">`;
@@ -128,7 +192,7 @@ function renderQuestion(){
   card.querySelectorAll('.opt').forEach(btn=>{
     btn.addEventListener('click',()=>{
       state.answers[i] = q.options[+btn.dataset.opt];
-      renderQuestion(); updateProgress();
+      renderQuestion(); updateProgress(); saveProgress();
     });
   });
   // أزرار التنقل
@@ -151,9 +215,9 @@ function updateProgress(){
 function escapeHTML(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
 /* ============ التنقل والإنهاء ============ */
-$('#btn-prev').addEventListener('click',()=>{ if(state.cur>0){state.cur--; renderQuestion();} });
+$('#btn-prev').addEventListener('click',()=>{ if(state.cur>0){state.cur--; renderQuestion(); saveProgress();} });
 $('#btn-next').addEventListener('click',()=>{
-  if(state.cur < state.questions.length-1){ state.cur++; renderQuestion(); }
+  if(state.cur < state.questions.length-1){ state.cur++; renderQuestion(); saveProgress(); }
   else { tryFinish(); }
 });
 function tryFinish(){
@@ -174,13 +238,25 @@ function finishExam(){
   const total=state.questions.length;
   const wrong=total-correct;
   const pct=Math.round(correct/total*100);
-  const passed = pct>=60;
-  const grade = pct>=90?'ممتاز': pct>=80?'جيّد جدًّا': pct>=70?'جيّد': pct>=60?'مقبول':'لم يجتز';
-  RESULT={ name:state.name, email:state.email, chapter:EXAM_DATA[state.chapter].title, correct,wrong,total,pct,passed,grade };
-  saveAttempt(RESULT);
+  const passed = pct>=PASS_PCT;
+  const grade = pct>=90?'ممتاز': pct>=80?'جيّد جدًّا': pct>=70?'جيّد': pct>=PASS_PCT?'مقبول':'لم يجتز';
+  const wrongItems = state.questions.filter((q,i)=>state.answers[i]!==q.correct).map(q=>q.qi).sort((a,b)=>a-b);
+  const retry = state.mode==='retry';
+  RESULT={ name:state.name, email:state.email, chapter:EXAM_DATA[state.chapter].title, correct,wrong,total,pct,passed,grade, wrong_items:wrongItems, mode:state.mode };
+  clearProgress();
+  if(!retry) saveAttempt(RESULT);   // جولة مراجعة الأخطاء تدريب لا يدخل في الإحصاء
 
-  $('#result-chapter').textContent = RESULT.chapter;
+  $('#result-chapter').textContent = (retry?'مراجعة الأخطاء — ':'')+RESULT.chapter;
   $('#res-name').textContent = state.name;
+  $('#res-msg-pre').textContent = retry ? (wrong? 'واصل المراجعة يا ' : 'أتقنت أخطاءك يا ')
+                                : passed ? 'أحسنت يا ' : 'لم تبلغ درجة الاجتياز يا ';
+  $('#res-msg-post').textContent = retry ? '— هذه جولة تدريب لا تُسجَّل ولا تمنح شهادة.'
+                                 : passed ? '' : '— الحدّ الأدنى '+arDigits(PASS_PCT)+'٪. راجع أخطاءك ثم أعد المحاولة.';
+  // الشهادة لمن اجتاز الاختبار الكامل فقط
+  $('#btn-cert').style.display = (passed && !retry) ? '' : 'none';
+  const rb=$('#btn-retry-wrong');
+  rb.style.display = wrong>0 ? '' : 'none';
+  $('#retry-count').textContent = arDigits(wrong);
   $('#st-correct').textContent=arDigits(correct);
   $('#st-wrong').textContent=arDigits(wrong);
   $('#st-total').textContent=arDigits(total);
@@ -214,7 +290,7 @@ function buildReview(){
     });
     if(ua===null) opts += `<div class="rev-opt w"><span class="tag">إجابتك</span>لم تُجب</div>`;
     rev.innerHTML = `<div class="rev-q"><span class="ic">${right?'✓':'✕'}</span>
-        <span><span class="qn">${arDigits(i+1)}.</span>${escapeHTML(q.q)}</span></div>
+        <span><span class="qn">${arDigits(i+1)}.</span>${escapeHTML(q.q)}${q.page?`<span class="rev-page">المرجع: ص ${arDigits(q.page)}</span>`:''}</span></div>
       <div class="rev-opts">${opts}</div>`;
     box.appendChild(rev);
   });
@@ -252,6 +328,7 @@ function drawRosette(ctx,cx,cy,R,color){
   ctx.restore();
 }
 async function generateCertificate(){
+  if(!RESULT.passed || RESULT.mode==='retry') return;
   await ensureFonts();
   const S=2, W=1400, H=990;
   const cv=$('#cert-canvas'); cv.width=W*S; cv.height=H*S;
@@ -345,7 +422,8 @@ function wrapText(ctx,text,x,y,maxW,lh){
 
 /* ============ إعادة ============ */
 function restart(){
-  state.chapter=-1;
+  state.chapter=-1; state.mode='full';
+  showResumeBox();
   document.querySelectorAll('.chapter').forEach(c=>{c.classList.remove('sel');c.setAttribute('aria-pressed','false')});
   showScreen('#screen-start');
 }
@@ -357,6 +435,7 @@ function recFromResult(R){
     name:R.name||'', email:R.email||'', chapter:R.chapter||'',
     correct:R.correct, wrong:R.wrong, total:R.total,
     pct:R.pct, grade:R.grade||'', passed:!!R.passed,
+    wrong_items:Array.isArray(R.wrong_items)? R.wrong_items : null,
     created_at:new Date().toISOString()
   };
 }
@@ -376,20 +455,18 @@ async function saveAttempt(R){
       headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+CLOUD.key, 'Content-Type':'application/json', 'Prefer':'return=minimal' },
       body: JSON.stringify(body)
     });
+    // أعمدة اختيارية: إن لم تُضف بعد إلى الجدول تُحذف من السجل ويُعاد الإرسال كي لا تضيع النتيجة
+    const OPTIONAL = ['subject','wrong_items'];
+    let body = { ...rec };
     try{
-      const res = await post(rec);
-      // إن لم يُضف عمود subject بعد في الجدول، تُرسل النتيجة دونه كي لا تضيع
-      if(res.status===400){
+      for(let attempt=0; attempt<=OPTIONAL.length; attempt++){
+        const res = await post(body);
+        if(res.ok) return;
         const txt = await res.text().catch(()=> '');
-        if(/subject/i.test(txt) && /column/i.test(txt)){
-          const { subject, ...legacy } = rec;
-          console.warn('عمود subject غير موجود في جدول results — أُرسلت النتيجة بدونه.');
-          await post(legacy);
-        }else{
-          console.warn('رفض الخادم النتيجة (HTTP 400):', txt);
-        }
-      }else if(!res.ok){
-        console.warn('لم تُحفظ النتيجة في السحابة: HTTP '+res.status, await res.text().catch(()=> ''));
+        const m = res.status===400 && /column/i.test(txt) && OPTIONAL.find(c=>c in body && txt.includes(c));
+        if(!m){ console.warn('لم تُحفظ النتيجة في السحابة: HTTP '+res.status, txt); return; }
+        console.warn('عمود '+m+' غير موجود في جدول results — أُعيد الإرسال بدونه.');
+        delete body[m];
       }
     }catch(e){ console.warn('تعذّر الاتصال بالسحابة لحفظ النتيجة', e); }
   }
@@ -539,12 +616,44 @@ function renderStats(){
   const tb=$('#dash-tbody');
   tb.innerHTML = rows.length? rows.map((r,i)=>`<tr><td>${arDigits(i+1)}</td><td>${escapeHTML(r.name||'')}</td><td dir="ltr" style="text-align:right">${escapeHTML(r.email||'')}</td><td class="nowrap">${escapeHTML(subjectName(rowSubject(r)))}</td><td>${escapeHTML(r.chapter||'')}</td><td class="nowrap">${arDigits(r.correct||0)}/${arDigits(r.total||0)}</td><td><b style="color:${(+r.pct>=60)?'var(--correct)':'var(--wrong)'}">${arDigits(+r.pct||0)}%</b></td><td>${escapeHTML(r.grade||'')}</td><td class="nowrap">${fmtDate(r.created_at)}</td></tr>`).join('') : '<tr><td colspan="9" class="muted-row">لا توجد نتائج بعد.</td></tr>';
   $('#rows-count').textContent=arDigits(rows.length);
+  renderHardest(rows);
+}
+/* تحليل الأسئلة: نسبة الخطأ لكل سؤال من المحاولات التي تحمل wrong_items.
+   يعتمد على موضع السؤال في ملف البيانات، فلا يُعاد ترتيب الأسئلة في data/*.js بعد جمع النتائج. */
+function renderHardest(rows){
+  const box=$('#hardest'), note=$('#hardest-note');
+  const sb=$('#stats-subject').value;
+  if(sb && sb!==SUBJECT_KEY){
+    box.innerHTML=''; note.textContent='تحليل الأسئلة متاح لمادة هذه الصفحة فقط ('+SUBJECT.name+'). افتح صفحة المادة الأخرى لعرض تحليلها.'; return;
+  }
+  const chIdx={}; EXAM_DATA.forEach((c,i)=>chIdx[c.title]=i);
+  const attempts={}, wrongs={};
+  rows.forEach(r=>{
+    if(rowSubject(r)!==SUBJECT_KEY || !Array.isArray(r.wrong_items)) return;
+    const ci=chIdx[r.chapter]; if(ci===undefined) return;
+    attempts[ci]=(attempts[ci]||0)+1;
+    new Set(r.wrong_items).forEach(qi=>{ if(EXAM_DATA[ci].questions[qi]){ const k=ci+':'+qi; wrongs[k]=(wrongs[k]||0)+1; } });
+  });
+  const list=Object.keys(wrongs).map(k=>{
+    const [ci,qi]=k.split(':').map(Number), n=attempts[ci], w=wrongs[k];
+    return { ci, qi, n, w, rate:Math.round(w/n*100), q:EXAM_DATA[ci].questions[qi] };
+  }).sort((a,b)=> b.rate-a.rate || b.w-a.w).slice(0,20);
+  const total=Object.values(attempts).reduce((s,x)=>s+x,0);
+  if(!list.length){
+    box.innerHTML='';
+    note.textContent = total ? 'لا أخطاء مسجّلة في المحاولات المعروضة.' : 'لا توجد بيانات تفصيلية بعد — تُجمع من المحاولات الجديدة فقط.';
+    return;
+  }
+  note.textContent='مرتّبة بنسبة الخطأ (أعلى '+arDigits(list.length)+') · عدد المحاولات المسجّلة بالتفاصيل: '+arDigits(total);
+  box.innerHTML = `<div class="table-scroll"><table class="dash-table"><thead><tr><th>نسبة الخطأ</th><th>السؤال</th><th>${escapeHTML(SUBJECT.unit)}</th><th>المستوى</th><th>أخطأ/حاول</th></tr></thead><tbody>`+
+    list.map(o=>`<tr><td><b style="color:${o.rate>=50?'var(--wrong)':'var(--gold-deep)'}">${arDigits(o.rate)}%</b></td><td>${escapeHTML(o.q.q)}<div class="hq-ans">الصحيح: ${escapeHTML(o.q.correct)}${o.q.page?' · ص '+arDigits(o.q.page):''}</div></td><td>${escapeHTML(EXAM_DATA[o.ci].title)}</td><td class="nowrap">${escapeHTML(o.q.level||'')}</td><td class="nowrap">${arDigits(o.w)}/${arDigits(o.n)}</td></tr>`).join('')+
+    '</tbody></table></div>';
 }
 function exportCSV(){
   const rows=currentRows();
-  const head=['الاسم','البريد','المادة','الباب/القسم','صحيح','خطأ','المجموع','النسبة','التقدير','اجتاز','التاريخ'];
+  const head=['الاسم','البريد','المادة','الباب/القسم','صحيح','خطأ','المجموع','النسبة','التقدير','اجتاز','التاريخ','أرقام الأسئلة الخاطئة (حسب ملف البيانات)'];
   const esc=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
-  const lines=[head.join(',')].concat(rows.map(r=>[r.name,r.email,subjectName(rowSubject(r)),r.chapter,r.correct,r.wrong,r.total,r.pct,r.grade,(r.passed||+r.pct>=60)?'نعم':'لا',fmtDate(r.created_at)].map(esc).join(',')));
+  const lines=[head.join(',')].concat(rows.map(r=>[r.name,r.email,subjectName(rowSubject(r)),r.chapter,r.correct,r.wrong,r.total,r.pct,r.grade,(r.passed||+r.pct>=60)?'نعم':'لا',fmtDate(r.created_at),Array.isArray(r.wrong_items)?r.wrong_items.map(x=>x+1).join(' '):''].map(esc).join(',')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='بيانات-المختبرين.csv'; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
@@ -554,6 +663,9 @@ function exportCSV(){
 $('#btn-start').addEventListener('click',startExam);
 $('#btn-cert').addEventListener('click',generateCertificate);
 $('#btn-restart').addEventListener('click',restart);
+$('#btn-retry-wrong').addEventListener('click',startRetryWrong);
+$('#resume-go').addEventListener('click',resumeExam);
+$('#resume-drop').addEventListener('click',discardProgress);
 $('#palette-toggle').addEventListener('click',()=>$('#palette').classList.toggle('open'));
 $('#btn-open-stats').addEventListener('click',openStats);
 $('#gate-unlock').addEventListener('click',statsUnlock);
@@ -575,3 +687,4 @@ $('#stats-subject').addEventListener('change',()=>{ buildChapterFilter(); render
 document.getElementById('brand-logo-1').src = LOGO_SRC;
 document.getElementById('brand-logo-2').src = LOGO_SRC;
 buildChapters();
+showResumeBox();

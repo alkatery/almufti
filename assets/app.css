@@ -141,6 +141,11 @@ body{
 .opt .txt{flex:1}
 .nav{display:flex;gap:12px;margin-top:24px}
 .nav .btn{flex:1}
+.q-card:focus{outline:none}
+.q-card:focus-visible{box-shadow:0 0 0 4px var(--ring)}
+.kbd-hint{display:none;text-align:center;font-size:.8rem;color:var(--muted);margin-top:14px}
+.kbd-hint kbd{font-family:var(--font-ui);font-size:.75rem;background:var(--card);border:1px solid #D8D2C4;border-bottom-width:2px;border-radius:5px;padding:0 6px;margin:0 2px}
+@media (hover:hover) and (pointer:fine){ .kbd-hint{display:block} }
 
 /* ===== النتيجة ===== */
 .result-hero{text-align:center;padding:30px 22px}

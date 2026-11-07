@@ -11,19 +11,14 @@ const CLOUD = {
 const CLOUD_ON = () => !!(CLOUD.url && CLOUD.key);
 const CLOUD_BASE = () => CLOUD.url.replace(/\/+$/,'');
 
-/* ============ المواد ============
-   كل صفحة تعرّف SUBJECT_ID قبل تحميل هذا الملف، وبياناتها في data/<id>.js */
-const SUBJECTS = {
-  imla: { name:'الإملاء',      title:'تمارين الموطّأ في الإملاء', units:'الأبواب', unit:'الباب' },
-  sarf: { name:'الصرف الصغير', title:'تمارين الصرف الصغير',       units:'الأقسام', unit:'القسم' }
-};
-const SUBJECT_KEY = (typeof SUBJECT_ID!=='undefined' && SUBJECTS[SUBJECT_ID]) ? SUBJECT_ID : 'imla';
+/* ============ المادة ============
+   SUBJECTS و SUBJECT_ID و DEFAULT_SUBJECT معرّفة في assets/subjects.js، والبيانات في data/<id>.js */
+const SUBJECT_KEY = SUBJECT_ID;
 const SUBJECT = SUBJECTS[SUBJECT_KEY];
-const DEFAULT_SUBJECT = 'imla';   // السجلات القديمة بلا حقل subject تعود إلى الإملاء
 const rowSubject = r => (r && r.subject && SUBJECTS[r.subject]) ? r.subject : DEFAULT_SUBJECT;
 const subjectName = id => (SUBJECTS[id]||{}).name || id;
 
-const logoImg = new Image(); logoImg.src = LOGO_SRC;
+const logoImg = new Image(); logoImg.src = 'assets/logo.png';
 
 /* ============ أدوات ============ */
 const $ = s => document.querySelector(s);
@@ -159,7 +154,7 @@ function buildPalette(){
   state.questions.forEach((_,i)=>{
     const b=document.createElement('button');
     b.className='pnum'; b.type='button'; b.textContent=arDigits(i+1);
-    b.addEventListener('click',()=>{ state.cur=i; renderQuestion(); saveProgress(); $('#palette').classList.remove('open'); });
+    b.addEventListener('click',()=>{ $('#palette').classList.remove('open'); goTo(i); });
     g.appendChild(b);
   });
 }
@@ -190,10 +185,7 @@ function renderQuestion(){
   html += `</div>`;
   card.innerHTML=html;
   card.querySelectorAll('.opt').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      state.answers[i] = q.options[+btn.dataset.opt];
-      renderQuestion(); updateProgress(); saveProgress();
-    });
+    btn.addEventListener('click',()=>selectOption(+btn.dataset.opt));
   });
   // أزرار التنقل
   $('#btn-prev').style.visibility = i===0 ? 'hidden':'visible';
@@ -206,6 +198,20 @@ function renderQuestion(){
   $('#q-cur').textContent=arDigits(i+1);
   updateProgress(); refreshPalette();
 }
+function selectOption(oi){
+  const q=state.questions[state.cur];
+  if(!q || oi<0 || oi>=q.options.length) return;
+  state.answers[state.cur] = q.options[oi];
+  renderQuestion(); updateProgress(); saveProgress();
+  // إعادة الرسم تحذف الزر المركَّز عليه؛ نعيد التركيز إلى الخيار المختار
+  const b=$('#q-card .opt[data-opt="'+oi+'"]'); if(b) b.focus({preventScroll:true});
+}
+// بعد التنقّل بين الأسئلة: نقل التركيز إلى بطاقة السؤال لقارئات الشاشة ولوحة المفاتيح
+function goTo(i){
+  if(i<0 || i>=state.questions.length) return;
+  state.cur=i; renderQuestion(); saveProgress();
+  $('#q-card').focus({preventScroll:true});
+}
 function updateProgress(){
   const done = state.answers.filter(a=>a!==null).length;
   $('#q-done').textContent=arDigits(done);
@@ -215,10 +221,36 @@ function updateProgress(){
 function escapeHTML(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
 /* ============ التنقل والإنهاء ============ */
-$('#btn-prev').addEventListener('click',()=>{ if(state.cur>0){state.cur--; renderQuestion(); saveProgress();} });
+$('#btn-prev').addEventListener('click',()=>goTo(state.cur-1));
 $('#btn-next').addEventListener('click',()=>{
-  if(state.cur < state.questions.length-1){ state.cur++; renderQuestion(); saveProgress(); }
-  else { tryFinish(); }
+  if(state.cur < state.questions.length-1) goTo(state.cur+1);
+  else tryFinish();
+});
+
+/* ============ اختصارات لوحة المفاتيح (شاشة الاختبار) ============
+   ١–٩ أو 1–9: اختيار الخيار | ص/خ: صواب/خطأ | ←: التالي | →: السابق (اتجاه RTL)
+   Enter: التالي أو الإنهاء | Esc: إغلاق نافذة التأكيد */
+const AR_DIGITS='١٢٣٤٥٦٧٨٩';
+document.addEventListener('keydown',e=>{
+  if(!$('#screen-exam').classList.contains('active')) return;
+  if(e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if($('#modal-finish').classList.contains('open')){
+    if(e.key==='Escape'){ e.preventDefault(); $('#modal-finish').classList.remove('open'); }
+    return;
+  }
+  const t=e.target;
+  if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+  const q=state.questions[state.cur]; if(!q) return;
+  let n = /^[1-9]$/.test(e.key) ? +e.key : (AR_DIGITS.indexOf(e.key)+1);
+  if(!n && q.type===TF_TYPE){
+    const idx = e.key==='ص' ? q.options.indexOf('صواب') : e.key==='خ' ? q.options.indexOf('خطأ') : -1;
+    if(idx>=0) n=idx+1;
+  }
+  if(n){ if(n<=q.options.length){ e.preventDefault(); selectOption(n-1); } return; }
+  if(e.key==='ArrowLeft'){ e.preventDefault(); $('#btn-next').click(); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); goTo(state.cur-1); }
+  // Enter على زرّ مركَّز يُفعّله المتصفّح أصلًا؛ نتعامل معه فقط خارج الأزرار
+  else if(e.key==='Enter' && !(t && t.closest && t.closest('button'))){ e.preventDefault(); $('#btn-next').click(); }
 });
 function tryFinish(){
   const un = state.answers.filter(a=>a===null).length;
@@ -505,12 +537,20 @@ async function loadAttempts(){
   if(CLOUD_ON()){
     const s = await validSession();
     if(!s){ const e=new Error('انتهت الجلسة'); e.auth=true; throw e; }
-    const res = await fetch(CLOUD_BASE()+'/rest/v1/'+CLOUD.table+'?select=*&order=created_at.desc&limit=5000', {
-      headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+s.access_token }
-    });
-    if(res.status===401 || res.status===403){ clearSession(); const e=new Error('HTTP '+res.status); e.auth=true; throw e; }
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    return await res.json();
+    // Supabase يقصّ الاستجابة عند حدّ max-rows (الافتراضي 1000)، فنجلب الصفحات تباعًا
+    const PAGE=1000, MAX=50000, all=[];
+    for(let off=0; off<MAX; off+=PAGE){
+      const res = await fetch(CLOUD_BASE()+'/rest/v1/'+CLOUD.table+'?select=*&order=created_at.desc&limit='+PAGE+'&offset='+off, {
+        headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+s.access_token }
+      });
+      if(res.status===401 || res.status===403){ clearSession(); const e=new Error('HTTP '+res.status); e.auth=true; throw e; }
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const chunk = await res.json();
+      all.push(...chunk);
+      if(chunk.length < PAGE) return all;
+    }
+    all.truncated = true;   // بلغ الحدّ الأعلى للعرض
+    return all;
   }
   try{ return JSON.parse(localStorage.getItem('almufti_results')||'[]').slice().reverse(); }catch(e){ return []; }
 }
@@ -568,7 +608,8 @@ async function loadAndRender(){
     const chip=$('#conn-chip');
     chip.textContent = CLOUD_ON()? 'متصل بالسحابة' : 'محلي (هذا الجهاز فقط)';
     chip.className = 'chip '+(CLOUD_ON()?'chip-ok':'chip-warn');
-    buildSubjectFilter(); buildChapterFilter(); renderStats(); note.textContent='';
+    buildSubjectFilter(); buildChapterFilter(); renderStats();
+    note.textContent = STATS_DATA.truncated ? 'تُعرض أحدث '+arDigits(STATS_DATA.length)+' محاولة فقط.' : '';
   }catch(e){
     if(e.auth){ showGate('انتهت الجلسة أو لا يملك هذا الحساب صلاحية القراءة. سجّل الدخول مجددًا.'); return; }
     note.textContent='تعذّر التحميل من السحابة ('+e.message+') — راجع url/key والصلاحيات.';
@@ -684,7 +725,5 @@ $('#stats-subject').addEventListener('change',()=>{ buildChapterFilter(); render
   $('#'+id).classList.remove('invalid'); $('#err-'+id.split('-')[1]).classList.remove('show');
 }));
 
-document.getElementById('brand-logo-1').src = LOGO_SRC;
-document.getElementById('brand-logo-2').src = LOGO_SRC;
 buildChapters();
 showResumeBox();

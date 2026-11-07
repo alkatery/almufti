@@ -7,21 +7,22 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css">
+<!-- عند تحديث أي ملف: غيّر قيمة v هنا وفي subjects.js أسفل الصفحة -->
+<link rel="stylesheet" href="assets/app.css?v=20261107">
 </head>
 <body>
 
 <!-- ================= شاشة البدء ================= -->
 <div class="screen active" id="screen-start">
   <header class="masthead">
-    <img class="brand-logo" id="brand-logo-1" alt="شعار المفتاح اللغوي">
-    <h1>تمارين الموطّأ في الإملاء</h1>
+    <img class="brand-logo" id="brand-logo-1" src="assets/logo.png" width="402" height="385" alt="شعار المفتاح اللغوي">
+    <h1 data-subj="title">تمارين الموطّأ في الإملاء</h1>
     <div class="sub">اختبارات تفاعلية مُصحّحة ذاتيًّا</div>
     <div class="rule-gold"></div>
   </header>
 
   <div class="wrap">
-    <p class="intro">اختر بابًا من الأبواب التالية، فتُجمع لك أسئلته في اختبارٍ واحد تُعرض بترتيبٍ عشوائيّ، وتظهر نتيجتك فور الانتهاء مع إمكانية تحميل شهادة باسمك.</p>
+    <p class="intro">اختر <span data-subj="unitIndef">بابًا</span> من <span data-subj="units">الأبواب</span> التالية، فتُجمع لك أسئلته في اختبارٍ واحد تُعرض بترتيبٍ عشوائيّ، وتظهر نتيجتك فور الانتهاء مع إمكانية تحميل شهادة باسمك.</p>
 
     <div class="card resume" id="resume-box" style="display:none">
       <div class="eyebrow">اختبار لم يكتمل</div>
@@ -47,9 +48,9 @@
     </div>
 
     <div class="card" style="margin-top:18px">
-      <div class="eyebrow">اختر الباب</div>
+      <div class="eyebrow">اختر <span data-subj="unit">الباب</span></div>
       <div class="chapters" id="chapters"></div>
-      <div class="err" id="err-chapter" style="margin-top:12px">اختر بابًا للبدء.</div>
+      <div class="err" id="err-chapter" style="margin-top:12px">اختر <span data-subj="unitIndef">بابًا</span> للبدء.</div>
     </div>
 
     <div class="start-bar">
@@ -80,7 +81,7 @@
         </button>
       </div>
       <div class="exam-top-row" style="margin-bottom:8px">
-        <div class="counter">السؤال <b id="q-cur">1</b> من <span id="q-total">1</span></div>
+        <div class="counter" aria-live="polite">السؤال <b id="q-cur">1</b> من <span id="q-total">1</span></div>
         <div class="counter" style="color:var(--muted)">أُجيب عن <span id="q-done">0</span></div>
       </div>
       <div class="pbar"><i id="pbar-fill"></i></div>
@@ -96,7 +97,7 @@
       </div>
     </div>
 
-    <div class="card q-card" id="q-card"></div>
+    <div class="card q-card" id="q-card" tabindex="-1"></div>
 
     <div class="nav">
       <button class="btn btn-ghost" id="btn-prev">
@@ -108,13 +109,14 @@
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
       </button>
     </div>
+    <p class="kbd-hint">لوحة المفاتيح: <kbd>1</kbd>–<kbd>3</kbd> للاختيار (أو <kbd>ص</kbd>/<kbd>خ</kbd> في صواب أو خطأ)، <kbd>←</kbd> التالي، <kbd>→</kbd> السابق، <kbd>Enter</kbd> التالي أو الإنهاء.</p>
   </div>
 </div>
 
 <!-- ================= شاشة النتيجة ================= -->
 <div class="screen" id="screen-result">
   <header class="masthead">
-    <img class="brand-logo" id="brand-logo-2" alt="شعار المفتاح اللغوي">
+    <img class="brand-logo" id="brand-logo-2" src="assets/logo.png" width="402" height="385" alt="شعار المفتاح اللغوي">
     <h1>نتيجة الاختبار</h1>
     <div class="sub" id="result-chapter"></div>
     <div class="rule-gold"></div>
@@ -152,7 +154,7 @@
         </button>
         <button class="btn btn-ghost" id="btn-restart">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>
-          اختبار باب آخر
+          اختبار <span data-subj="unitBare">باب</span> آخر
         </button>
       </div>
     </div>
@@ -244,9 +246,7 @@
 
 <canvas class="cert-canvas" id="cert-canvas"></canvas>
 
-<script>const SUBJECT_ID = 'imla';</script>
-<script src="data/imla.js"></script>
-<script src="assets/logo.js"></script>
-<script src="assets/app.js"></script>
+<!-- يحدّد المادة من ?s= ويضبط نصوصها ثم يحمّل data/<id>.js و app.js -->
+<script src="assets/subjects.js?v=20261107"></script>
 </body>
 </html>

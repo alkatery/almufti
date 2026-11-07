@@ -162,11 +162,15 @@
     <!-- بوابة الرمز السري -->
     <div class="card gate" id="stats-gate">
       <div class="eyebrow">دخول المعلّم</div>
-      <p class="intro" style="margin:6px 0 16px">هذه اللوحة خاصّة بالمعلّم. أدخل الرمز السري للاطّلاع على بيانات المختبِرين.</p>
+      <p class="intro" style="margin:6px 0 16px">هذه اللوحة خاصّة بالمعلّم. سجّل الدخول بحسابك للاطّلاع على بيانات المختبِرين.</p>
       <div class="field">
-        <label for="gate-pass">الرمز السري</label>
-        <input type="password" id="gate-pass" placeholder="••••" autocomplete="off" inputmode="numeric">
-        <div class="err" id="gate-err">رمز غير صحيح.</div>
+        <label for="gate-email">البريد الإلكتروني</label>
+        <input type="email" id="gate-email" placeholder="teacher@example.com" autocomplete="username" dir="ltr" style="text-align:right">
+      </div>
+      <div class="field">
+        <label for="gate-pass">كلمة المرور</label>
+        <input type="password" id="gate-pass" placeholder="••••••••" autocomplete="current-password">
+        <div class="err" id="gate-err"></div>
       </div>
       <button class="btn btn-primary btn-block" id="gate-unlock">دخول</button>
       <div style="text-align:center;margin-top:12px"><button class="btn btn-ghost btn-sm" id="stats-back">رجوع إلى الاختبار</button></div>
@@ -182,6 +186,7 @@
         <button class="btn btn-ghost btn-sm" id="stats-refresh">تحديث</button>
         <button class="btn btn-ghost btn-sm" id="stats-export">تصدير CSV</button>
         <button class="btn btn-ghost btn-sm" id="stats-back2">رجوع</button>
+        <button class="btn btn-ghost btn-sm" id="stats-logout" style="display:none">تسجيل الخروج</button>
       </div>
       <div class="stats-note" id="stats-note"></div>
 
@@ -201,7 +206,7 @@
           </table>
         </div>
       </div>
-      <footer>تُحدَّث البيانات من قاعدة بياناتك السحابية. احرص على سرّية الرمز.</footer>
+      <footer>تُحدَّث البيانات من قاعدة بياناتك السحابية. لا تُشارك بيانات دخولك.</footer>
     </div>
   </div>
 </div>

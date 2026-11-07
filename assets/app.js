@@ -6,8 +6,10 @@ const CLOUD = {
   key:   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvcmtsdG1nam5kb2R4d3RhZXhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0MTk0MzQsImV4cCI6MjA5Njk5NTQzNH0.Xr2uh-Xid4RmuseI03aWARpyjrMvCnirffSnWpcwiDw',
   table: 'results'
 };
-const STATS_PASSCODE = 'AL2islam';   // رمز دخول لوحة المعلّم
+// مفتاح anon علنيّ بطبيعته: لا يكفي وحده إلا للإدراج. قراءة اللوحة تتطلّب
+// تسجيل دخول معلّم عبر Supabase Auth، وتحكمها سياسات RLS في supabase/security.sql
 const CLOUD_ON = () => !!(CLOUD.url && CLOUD.key);
+const CLOUD_BASE = () => CLOUD.url.replace(/\/+$/,'');
 
 /* ============ المواد ============
    كل صفحة تعرّف SUBJECT_ID قبل تحميل هذا الملف، وبياناتها في data/<id>.js */
@@ -360,12 +362,16 @@ function recFromResult(R){
 }
 async function saveAttempt(R){
   const rec = recFromResult(R);
-  try{
-    const a = JSON.parse(localStorage.getItem('almufti_results')||'[]');
-    a.push(rec); localStorage.setItem('almufti_results', JSON.stringify(a));
-  }catch(e){}
-  if(CLOUD_ON()){
-    const post = body => fetch(CLOUD.url.replace(/\/+$/,'')+'/rest/v1/'+CLOUD.table, {
+  // الوضع المحلي فقط: لا نترك بيانات الطلاب على أجهزة مشتركة حين تكون السحابة مفعّلة
+  if(!CLOUD_ON()){
+    try{
+      const a = JSON.parse(localStorage.getItem('almufti_results')||'[]');
+      a.push(rec); localStorage.setItem('almufti_results', JSON.stringify(a));
+    }catch(e){}
+    return;
+  }
+  {
+    const post = body => fetch(CLOUD_BASE()+'/rest/v1/'+CLOUD.table, {
       method:'POST',
       headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+CLOUD.key, 'Content-Type':'application/json', 'Prefer':'return=minimal' },
       body: JSON.stringify(body)
@@ -375,20 +381,57 @@ async function saveAttempt(R){
       // إن لم يُضف عمود subject بعد في الجدول، تُرسل النتيجة دونه كي لا تضيع
       if(res.status===400){
         const txt = await res.text().catch(()=> '');
-        if(/subject/i.test(txt)){
+        if(/subject/i.test(txt) && /column/i.test(txt)){
           const { subject, ...legacy } = rec;
           console.warn('عمود subject غير موجود في جدول results — أُرسلت النتيجة بدونه.');
           await post(legacy);
+        }else{
+          console.warn('رفض الخادم النتيجة (HTTP 400):', txt);
         }
+      }else if(!res.ok){
+        console.warn('لم تُحفظ النتيجة في السحابة: HTTP '+res.status, await res.text().catch(()=> ''));
       }
-    }catch(e){ /* محفوظة محليًّا على أي حال */ }
+    }catch(e){ console.warn('تعذّر الاتصال بالسحابة لحفظ النتيجة', e); }
   }
+}
+
+/* ============ جلسة المعلّم (Supabase Auth) ============ */
+const AUTH_KEY = 'almufti_teacher_session';
+function getSession(){ try{ return JSON.parse(sessionStorage.getItem(AUTH_KEY)||'null'); }catch(e){ return null; } }
+function setSession(d){
+  const s = { access_token:d.access_token, refresh_token:d.refresh_token,
+              expires_at: Date.now() + ((+d.expires_in||3600)*1000), email:(d.user&&d.user.email)||'' };
+  try{ sessionStorage.setItem(AUTH_KEY, JSON.stringify(s)); }catch(e){}
+  return s;
+}
+function clearSession(){ try{ sessionStorage.removeItem(AUTH_KEY); }catch(e){} }
+async function authRequest(grant, body){
+  const res = await fetch(CLOUD_BASE()+'/auth/v1/token?grant_type='+grant, {
+    method:'POST', headers:{ 'apikey':CLOUD.key, 'Content-Type':'application/json' }, body:JSON.stringify(body)
+  });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok || !data.access_token){
+    const e = new Error(data.error_description || data.msg || data.error || ('HTTP '+res.status));
+    e.status = res.status; throw e;
+  }
+  return setSession(data);
+}
+async function validSession(){
+  const s = getSession();
+  if(!s || !s.access_token) return null;
+  if(Date.now() < s.expires_at - 60000) return s;
+  if(!s.refresh_token){ clearSession(); return null; }
+  try{ return await authRequest('refresh_token', { refresh_token:s.refresh_token }); }
+  catch(e){ clearSession(); return null; }
 }
 async function loadAttempts(){
   if(CLOUD_ON()){
-    const res = await fetch(CLOUD.url.replace(/\/+$/,'')+'/rest/v1/'+CLOUD.table+'?select=*&order=created_at.desc&limit=5000', {
-      headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+CLOUD.key }
+    const s = await validSession();
+    if(!s){ const e=new Error('انتهت الجلسة'); e.auth=true; throw e; }
+    const res = await fetch(CLOUD_BASE()+'/rest/v1/'+CLOUD.table+'?select=*&order=created_at.desc&limit=5000', {
+      headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+s.access_token }
     });
+    if(res.status===401 || res.status===403){ clearSession(); const e=new Error('HTTP '+res.status); e.auth=true; throw e; }
     if(!res.ok) throw new Error('HTTP '+res.status);
     return await res.json();
   }
@@ -399,20 +442,47 @@ function fmtDate(iso){
   catch(e){ return iso||''; }
 }
 let STATS_DATA=[];
-function openStats(){
-  showScreen('#screen-stats');
-  if(sessionStorage.getItem('almufti_stats_ok')==='1'){
-    $('#stats-gate').style.display='none'; $('#stats-body').style.display='block'; loadAndRender();
-  }else{
-    $('#stats-gate').style.display='block'; $('#stats-body').style.display='none';
-    $('#gate-pass').value=''; $('#gate-err').classList.remove('show'); setTimeout(()=>$('#gate-pass').focus(),60);
-  }
+function showGate(msg){
+  $('#stats-gate').style.display='block'; $('#stats-body').style.display='none';
+  $('#gate-pass').value='';
+  const err=$('#gate-err'); err.textContent=msg||''; err.classList.toggle('show', !!msg);
+  setTimeout(()=>($('#gate-email').value? $('#gate-pass') : $('#gate-email')).focus(),60);
 }
-function statsUnlock(){
-  if($('#gate-pass').value.trim()===String(STATS_PASSCODE)){
-    sessionStorage.setItem('almufti_stats_ok','1');
-    $('#stats-gate').style.display='none'; $('#stats-body').style.display='block'; loadAndRender();
-  }else{ $('#gate-err').classList.add('show'); }
+function showStatsBody(){
+  $('#stats-gate').style.display='none'; $('#stats-body').style.display='block';
+  const s=getSession(); $('#stats-logout').style.display = (CLOUD_ON() && s)? '' : 'none';
+  loadAndRender();
+}
+async function openStats(){
+  showScreen('#screen-stats');
+  // الوضع المحلي: البيانات على هذا الجهاز فقط ولا يوجد خادم للمصادقة
+  if(!CLOUD_ON() || await validSession()) showStatsBody();
+  else showGate();
+}
+let unlocking=false;
+async function statsUnlock(){
+  if(unlocking) return;
+  const email=$('#gate-email').value.trim(), password=$('#gate-pass').value;
+  const err=$('#gate-err');
+  if(!email || !password){ err.textContent='أدخل البريد وكلمة المرور.'; err.classList.add('show'); return; }
+  unlocking=true; const btn=$('#gate-unlock'); btn.disabled=true; btn.textContent='…جارٍ الدخول';
+  try{
+    await authRequest('password', { email, password });
+    showStatsBody();
+  }catch(e){
+    err.textContent = (e.status===400 || e.status===401) ? 'البريد أو كلمة المرور غير صحيحة.'
+                    : (e.status===429) ? 'محاولات كثيرة، انتظر قليلًا ثم أعد المحاولة.'
+                    : 'تعذّر الاتصال بالخادم ('+e.message+').';
+    err.classList.add('show');
+  }finally{ unlocking=false; btn.disabled=false; btn.textContent='دخول'; }
+}
+async function statsLogout(){
+  const s=getSession(); clearSession(); STATS_DATA=[];
+  $('#dash-tbody').innerHTML=''; $('#kpi-grid').innerHTML=''; $('#chapter-bars').innerHTML='';
+  if(s && s.access_token){
+    fetch(CLOUD_BASE()+'/auth/v1/logout', { method:'POST', headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+s.access_token } }).catch(()=>{});
+  }
+  showGate();
 }
 async function loadAndRender(){
   const note=$('#stats-note'); note.textContent='…جارٍ التحميل'; note.classList.remove('err');
@@ -423,6 +493,7 @@ async function loadAndRender(){
     chip.className = 'chip '+(CLOUD_ON()?'chip-ok':'chip-warn');
     buildSubjectFilter(); buildChapterFilter(); renderStats(); note.textContent='';
   }catch(e){
+    if(e.auth){ showGate('انتهت الجلسة أو لا يملك هذا الحساب صلاحية القراءة. سجّل الدخول مجددًا.'); return; }
     note.textContent='تعذّر التحميل من السحابة ('+e.message+') — راجع url/key والصلاحيات.';
     note.classList.add('err');
   }
@@ -486,8 +557,11 @@ $('#btn-restart').addEventListener('click',restart);
 $('#palette-toggle').addEventListener('click',()=>$('#palette').classList.toggle('open'));
 $('#btn-open-stats').addEventListener('click',openStats);
 $('#gate-unlock').addEventListener('click',statsUnlock);
-$('#gate-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') statsUnlock(); });
-$('#gate-pass').addEventListener('input',()=>$('#gate-err').classList.remove('show'));
+$('#stats-logout').addEventListener('click',statsLogout);
+['gate-email','gate-pass'].forEach(id=>{
+  $('#'+id).addEventListener('keydown',e=>{ if(e.key==='Enter') statsUnlock(); });
+  $('#'+id).addEventListener('input',()=>$('#gate-err').classList.remove('show'));
+});
 ['stats-back','stats-back2'].forEach(id=>{ const el=$('#'+id); if(el) el.addEventListener('click',()=>showScreen('#screen-start')); });
 $('#stats-refresh').addEventListener('click',loadAndRender);
 $('#stats-export').addEventListener('click',exportCSV);

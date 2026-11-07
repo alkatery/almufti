@@ -557,34 +557,46 @@ async function generateCertificate(){
 
     // الشعار
     if(logoImg && !logoImg.complete){ await new Promise(r=>{logoImg.onload=r; logoImg.onerror=r;}); }
-    try{ if(logoImg && logoImg.naturalWidth){ const lw=104, lh=lw*logoImg.naturalHeight/logoImg.naturalWidth; ctx.drawImage(logoImg, cx-lw/2, 86, lw, lh); } }catch(e){}
+    let y=170;   // أسفل الشعار (احتياط إن لم يُحمَّل)
+    try{ if(logoImg && logoImg.naturalWidth){ const lw=98, lh=lw*logoImg.naturalHeight/logoImg.naturalWidth; ctx.drawImage(logoImg, cx-lw/2, 78, lw, lh); y=78+lh; } }catch(e){}
+
+    // التباعد يُحسب من القياس الفعلي لصعود الحروف ونزولها؛ ذيول خط الرقعة طويلة
+    const box=t=>{ const m=ctx.measureText(t); return { up:m.actualBoundingBoxAscent||0, down:m.actualBoundingBoxDescent||0 }; };
 
     // العنوان
-    const tg=ctx.createLinearGradient(cx-210,0,cx+210,0);
+    const TITLE='شهادة إتمام';
+    ctx.font='700 64px "Aref Ruqaa", Amiri, serif';
+    const tb=box(TITLE), titleY=y+20+tb.up;
+    const tg=ctx.createLinearGradient(cx-200,0,cx+200,0);
     tg.addColorStop(0,'#6B5122'); tg.addColorStop(.35,'#A9853F'); tg.addColorStop(.5,'#8A6A2E'); tg.addColorStop(.65,'#A9853F'); tg.addColorStop(1,'#6B5122');
-    ctx.fillStyle=tg;
-    ctx.font='700 66px "Aref Ruqaa", Amiri, serif';
-    ctx.fillText('شهادة إتمام',cx,266);
-    ctx.fillStyle=CERT.teal; ctx.font='400 25px Amiri, serif';
-    ctx.fillText(SUBJECT.title,cx,306);
-    ornamentDivider(ctx,cx,332,230);
+    ctx.fillStyle=tg; ctx.fillText(TITLE,cx,titleY);
+
+    // اسم المادة تحت العنوان، بعد نزول الحروف بمسافة واضحة
+    ctx.font='400 24px Amiri, serif';
+    const sb=box(SUBJECT.title), subY=titleY+tb.down+18+sb.up;
+    ctx.fillStyle=CERT.teal; ctx.fillText(SUBJECT.title,cx,subY);
+    const div1=subY+sb.down+20;
+    ornamentDivider(ctx,cx,div1,230);
 
     // المستفيد — صياغة محايدة تصلح للذكر والأنثى
     ctx.fillStyle=CERT.inkSoft; ctx.font='500 21px Tajawal, sans-serif';
-    ctx.fillText('تُمنح هذه الشهادة إلى',cx,380);
-    fitFont(ctx,RESULT.name,700,68,'"Aref Ruqaa", Amiri, serif',820,36);
-    ctx.fillStyle=CERT.tealDeep; ctx.fillText(RESULT.name,cx,460);
-    ornamentDivider(ctx,cx,490,300);
+    const leadY=div1+44;
+    ctx.fillText('تُمنح هذه الشهادة إلى',cx,leadY);
+    fitFont(ctx,RESULT.name,700,66,'"Aref Ruqaa", Amiri, serif',820,36);
+    const nb=box(RESULT.name), nameY=leadY+18+nb.up;
+    ctx.fillStyle=CERT.tealDeep; ctx.fillText(RESULT.name,cx,nameY);
+    const div2=nameY+nb.down+16;
+    ornamentDivider(ctx,cx,div2,300);
 
     ctx.fillStyle=CERT.inkSoft; ctx.font='500 21px Tajawal, sans-serif';
-    ctx.fillText('تقديرًا لإتمام اختبار',cx,536);
+    ctx.fillText('تقديرًا لإتمام اختبار',cx,div2+44);
     ctx.fillStyle=CERT.ink; ctx.font='700 31px Amiri, serif';
     const chLines=wrapLines(ctx,RESULT.chapter,960).slice(0,2);
-    chLines.forEach((l,i)=>ctx.fillText(l,cx,578+i*40));
+    chLines.forEach((l,i)=>ctx.fillText(l,cx,div2+86+i*40));
     const extra=(chLines.length-1)*40;
 
     // النتيجة: ثلاث خانات بإطار ذهبي رفيع
-    const by=612+extra, bw=600, bh=84, bx=cx-bw/2;
+    const by=div2+118+extra, bw=600, bh=84, bx=cx-bw/2;
     ctx.save();
     ctx.fillStyle='rgba(255,255,255,0.6)'; roundRect(ctx,bx,by,bw,bh,12); ctx.fill();
     ctx.strokeStyle=CERT.gold; ctx.lineWidth=1.3; roundRect(ctx,bx,by,bw,bh,12); ctx.stroke();
@@ -599,12 +611,13 @@ async function generateCertificate(){
     ctx.restore();
 
     // التذييل: التاريخ يمينًا، الختم وسطًا، جهة الإصدار والرقم المرجعي يسارًا
-    const fy=Math.max(790, by+bh+64);
+    // التذييل في مكانه الثابت ما أمكن، ويُدفع لأسفل عند طول المحتوى دون تجاوز الإطار
+    const fy=Math.min(812, Math.max(790, by+bh+52));
     const ref=certRef(RESULT,now);
     const hd=hijriDate(now), gd=gregDate(now);
     infoBlock(ctx, W-330, fy, 'تاريخ الإصدار', hd? [hd,gd] : [gd]);
     infoBlock(ctx, 330, fy, 'جهة الإصدار', [CERT.issuer+' — '+CERT.motto, 'الرقم المرجعي: '+ref]);
-    drawStamp(ctx, cx, fy+30, 84, hashStr(ref), hijriYear(now));
+    drawStamp(ctx, cx, fy+30, 78, hashStr(ref), hijriYear(now));
 
     // تنزيل
     const safe=(RESULT.name+' - '+RESULT.chapter).replace(/[\\/:*?"<>|]/g,'').slice(0,80);

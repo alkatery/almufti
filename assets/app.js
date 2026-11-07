@@ -358,31 +358,52 @@ function recFromResult(R){
     created_at:new Date().toISOString()
   };
 }
+const PENDING_KEY='almufti_pending';
+const readPending=()=>{ try{ return JSON.parse(localStorage.getItem(PENDING_KEY)||'[]'); }catch(e){ return []; } };
+const writePending=a=>{ try{ localStorage.setItem(PENDING_KEY, JSON.stringify(a)); }catch(e){} };
+async function cloudPost(rec){
+  const post = body => fetch(CLOUD.url.replace(/\/+$/,'')+'/rest/v1/'+CLOUD.table, {
+    method:'POST',
+    headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+CLOUD.key, 'Content-Type':'application/json', 'Prefer':'return=minimal' },
+    body: JSON.stringify(body)
+  });
+  let res = await post(rec);
+  if(!res.ok){
+    let txt=''; try{ txt=await res.text(); }catch(e){}
+    // إن لم يُضف عمود subject بعد في الجدول، تُرسل النتيجة دونه كي لا تضيع
+    if(res.status===400 && /subject/i.test(txt)){
+      const { subject, ...legacy } = rec;
+      console.warn('عمود subject غير موجود في جدول results — أُرسلت النتيجة بدونه.');
+      res = await post(legacy);
+      if(res.ok) return;
+      try{ txt=await res.text(); }catch(e){ txt=''; }
+    }
+    throw new Error('HTTP '+res.status+(txt?' — '+txt.slice(0,300):''));
+  }
+}
 async function saveAttempt(R){
   const rec = recFromResult(R);
   try{
     const a = JSON.parse(localStorage.getItem('almufti_results')||'[]');
     a.push(rec); localStorage.setItem('almufti_results', JSON.stringify(a));
   }catch(e){}
-  if(CLOUD_ON()){
-    const post = body => fetch(CLOUD.url.replace(/\/+$/,'')+'/rest/v1/'+CLOUD.table, {
-      method:'POST',
-      headers:{ 'apikey':CLOUD.key, 'Authorization':'Bearer '+CLOUD.key, 'Content-Type':'application/json', 'Prefer':'return=minimal' },
-      body: JSON.stringify(body)
-    });
-    try{
-      const res = await post(rec);
-      // إن لم يُضف عمود subject بعد في الجدول، تُرسل النتيجة دونه كي لا تضيع
-      if(res.status===400){
-        const txt = await res.text().catch(()=> '');
-        if(/subject/i.test(txt)){
-          const { subject, ...legacy } = rec;
-          console.warn('عمود subject غير موجود في جدول results — أُرسلت النتيجة بدونه.');
-          await post(legacy);
-        }
-      }
-    }catch(e){ /* محفوظة محليًّا على أي حال */ }
+  if(!CLOUD_ON()) return;
+  try{ await cloudPost(rec); }
+  catch(e){
+    console.error('[almufti] تعذّر إرسال النتيجة إلى السحابة؛ أُضيفت لطابور إعادة المحاولة:', e.message);
+    const q=readPending(); q.push(rec); writePending(q);
   }
+}
+/* إعادة إرسال النتائج التي فشل إرسالها سابقًا (عند فتح الصفحة) */
+async function flushPending(){
+  if(!CLOUD_ON()) return;
+  const q=readPending(); if(!q.length) return;
+  const left=[];
+  for(const rec of q){
+    try{ await cloudPost(rec); }
+    catch(e){ console.error('[almufti] ما زال الإرسال متعذّرًا:', e.message); left.push(rec); }
+  }
+  writePending(left);
 }
 async function loadAttempts(){
   if(CLOUD_ON()){
@@ -421,7 +442,10 @@ async function loadAndRender(){
     const chip=$('#conn-chip');
     chip.textContent = CLOUD_ON()? 'متصل بالسحابة' : 'محلي (هذا الجهاز فقط)';
     chip.className = 'chip '+(CLOUD_ON()?'chip-ok':'chip-warn');
-    buildSubjectFilter(); buildChapterFilter(); renderStats(); note.textContent='';
+    buildSubjectFilter(); buildChapterFilter(); renderStats();
+    note.textContent = (CLOUD_ON() && !STATS_DATA.length)
+      ? 'لا توجد سجلات مقروءة في السحابة. إن كان الطلاب قد اختبروا فعلًا فتحقّق من سياسات RLS لجدول «'+CLOUD.table+'» (insert و select للدور anon).'
+      : '';
   }catch(e){
     note.textContent='تعذّر التحميل من السحابة ('+e.message+') — راجع url/key والصلاحيات.';
     note.classList.add('err');
@@ -501,3 +525,4 @@ $('#stats-subject').addEventListener('change',()=>{ buildChapterFilter(); render
 document.getElementById('brand-logo-1').src = LOGO_SRC;
 document.getElementById('brand-logo-2').src = LOGO_SRC;
 buildChapters();
+flushPending();

@@ -328,129 +328,311 @@ function buildReview(){
   });
 }
 
-/* ============ الشهادة (Canvas → PNG) ============ */
+/* ============ الشهادة (Canvas → PNG بدقّة طباعة A4 تقريبًا) ============ */
+const CERT = {
+  W:1400, H:990, S:2.5,                 // 3500×2475 بكسل ≈ A4 أفقي بدقّة 300dpi
+  paper:'#FBF7EC', paperEdge:'#EFE6D2',
+  teal:'#0E6E5E', tealDeep:'#0A3F36',
+  gold:'#B08D4C', goldLight:'#D9BE84', goldDeep:'#7A5E2C',
+  ink:'#2A3632', inkSoft:'#5B6862',
+  stamp:'#8E1C3B',                       // حبر الختم (عنابي)
+  issuer:'المفتي اللغوي', motto:'لبث الوعي اللغوي'
+};
 async function ensureFonts(){
-  if(document.fonts && document.fonts.load){
-    try{ await Promise.all([
-      document.fonts.load('700 60px Amiri'),
-      document.fonts.load('400 30px Amiri'),
-      document.fonts.load('700 30px Tajawal'),
-      document.fonts.load('500 26px Tajawal'),
-      document.fonts.ready
-    ]); }catch(e){}
-  }
+  if(!(document.fonts && document.fonts.load)) return;
+  try{ await Promise.all([
+    document.fonts.load('700 70px "Aref Ruqaa"'),
+    document.fonts.load('400 30px "Aref Ruqaa"'),
+    document.fonts.load('600 16px "Reem Kufi"'),
+    document.fonts.load('700 40px Amiri'),
+    document.fonts.load('400 26px Amiri'),
+    document.fonts.load('700 22px Tajawal'),
+    document.fonts.load('500 22px Tajawal'),
+    document.fonts.ready
+  ]); }catch(e){}
 }
 function hijriDate(d){
-  try{ return new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura',{day:'numeric',month:'long',year:'numeric'}).format(d)+'هـ'; }
+  try{ return new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura',{day:'numeric',month:'long',year:'numeric'}).format(d).replace(/\s*هـ$/,'')+' هـ'; }
+  catch(e){ return ''; }
+}
+function hijriYear(d){
+  try{ return new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura',{year:'numeric'}).format(d).replace(/\s*هـ$/,''); }
   catch(e){ return ''; }
 }
 function gregDate(d){
-  try{ return new Intl.DateTimeFormat('ar-EG',{day:'numeric',month:'long',year:'numeric'}).format(d)+'م'; }
+  try{ return new Intl.DateTimeFormat('ar-EG',{day:'numeric',month:'long',year:'numeric'}).format(d)+' م'; }
   catch(e){ return d.toLocaleDateString('ar'); }
 }
-function drawRosette(ctx,cx,cy,R,color){
-  ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=2.4; ctx.fillStyle=color;
-  ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.stroke();
-  for(const rot of [0,Math.PI/4]){
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(rot);
-    const s=R*0.86; ctx.strokeRect(-s/2,-s/2,s,s); ctx.restore();
+// مولّد عشوائي ثابت البذرة: يجعل ملمس الختم ثابتًا للشهادة نفسها
+function seededRandom(seed){
+  let a = seed>>>0;
+  return ()=>{ a=(a+0x6D2B79F5)>>>0; let t=a; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; };
+}
+function hashStr(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function certRef(R, now){
+  const h = hashStr([R.name,R.email,R.chapter,R.pct,now.toISOString()].join('|')).toString(36).toUpperCase().padStart(7,'0').slice(-7);
+  return 'MF-'+SUBJECT_KEY.toUpperCase()+'-'+h;
+}
+function goldGradient(ctx,x0,x1){
+  const g=ctx.createLinearGradient(x0,0,x1,0);
+  g.addColorStop(0,CERT.goldDeep); g.addColorStop(.28,CERT.goldLight); g.addColorStop(.5,CERT.gold);
+  g.addColorStop(.72,CERT.goldLight); g.addColorStop(1,CERT.goldDeep);
+  return g;
+}
+// نجمة ثمانية (خاتم سليمان): مربّعان متداخلان
+function star8Path(ctx,cx,cy,r){
+  ctx.beginPath();
+  for(let i=0;i<16;i++){
+    const a=-Math.PI/2+i*Math.PI/8, rr = i%2? r*0.76 : r;
+    const x=cx+rr*Math.cos(a), y=cy+rr*Math.sin(a);
+    i? ctx.lineTo(x,y) : ctx.moveTo(x,y);
   }
-  ctx.beginPath(); ctx.arc(cx,cy,R*0.42,0,2*Math.PI); ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx,cy,R*0.14,0,2*Math.PI); ctx.fill();
+  ctx.closePath();
+}
+function rosette(ctx,cx,cy,r){
+  ctx.save();
+  ctx.fillStyle=CERT.paper; ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.fill();
+  ctx.strokeStyle=goldGradient(ctx,cx-r,cx+r); ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.stroke();
+  ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,r-5,0,2*Math.PI); ctx.stroke();
+  ctx.lineWidth=1.6; star8Path(ctx,cx,cy,r-9); ctx.stroke();
+  ctx.fillStyle=CERT.teal; star8Path(ctx,cx,cy,(r-9)*0.42); ctx.fill();
+  ctx.restore();
+}
+// زخرفة هندسية خفيفة كعلامة مائية داخل الإطار
+function drawPattern(ctx,x,y,w,h){
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
+  ctx.strokeStyle='rgba(176,141,76,0.07)'; ctx.lineWidth=1;
+  const step=56;
+  for(let yy=y-step; yy<y+h+step; yy+=step){
+    for(let xx=x-step; xx<x+w+step; xx+=step){
+      const off = (Math.round((yy-y)/step)%2) ? step/2 : 0;
+      star8Path(ctx,xx+off,yy,18); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+// إطار: شريط داكن، خط ذهبي، شريط زخرفي من معيّنات، ثم خط ذهبي مزدوج وزوايا وردية
+function drawFrame(ctx){
+  const {W,H}=CERT;
+  ctx.save();
+  ctx.fillStyle=CERT.tealDeep;
+  ctx.fillRect(0,0,W,22); ctx.fillRect(0,H-22,W,22); ctx.fillRect(0,0,22,H); ctx.fillRect(W-22,0,22,H);
+  ctx.strokeStyle=goldGradient(ctx,0,W); ctx.lineWidth=2.4; ctx.strokeRect(28,28,W-56,H-56);
+  ctx.lineWidth=1; ctx.strokeRect(34,34,W-68,H-68);
+  // شريط المعيّنات
+  ctx.fillStyle='rgba(176,141,76,0.55)';
+  const band=46, gap=26;
+  const diamond=(x,y,s)=>{ ctx.beginPath(); ctx.moveTo(x,y-s); ctx.lineTo(x+s,y); ctx.lineTo(x,y+s); ctx.lineTo(x-s,y); ctx.closePath(); ctx.fill(); };
+  for(let x=110; x<=W-110; x+=gap){ diamond(x,band,3.2); diamond(x,H-band,3.2); }
+  for(let y=110; y<=H-110; y+=gap){ diamond(band,y,3.2); diamond(W-band,y,3.2); }
+  ctx.strokeStyle=goldGradient(ctx,0,W); ctx.lineWidth=1.8; ctx.strokeRect(58,58,W-116,H-116);
+  ctx.lineWidth=0.8; ctx.strokeRect(64,64,W-128,H-128);
+  ctx.restore();
+  [[60,60],[W-60,60],[60,H-60],[W-60,H-60]].forEach(([x,y])=>rosette(ctx,x,y,30));
+}
+function ornamentDivider(ctx,cx,y,half){
+  ctx.save();
+  const g=ctx.createLinearGradient(cx-half,0,cx+half,0);
+  g.addColorStop(0,'rgba(176,141,76,0)'); g.addColorStop(.5,CERT.gold); g.addColorStop(1,'rgba(176,141,76,0)');
+  ctx.strokeStyle=g; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(cx-half,y); ctx.lineTo(cx-14,y); ctx.moveTo(cx+14,y); ctx.lineTo(cx+half,y); ctx.stroke();
+  ctx.fillStyle=CERT.gold;
+  ctx.beginPath(); ctx.moveTo(cx,y-8); ctx.lineTo(cx+8,y); ctx.lineTo(cx,y+8); ctx.lineTo(cx-8,y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=CERT.paper; ctx.beginPath(); ctx.arc(cx,y,2.4,0,2*Math.PI); ctx.fill();
+  [-26,26].forEach(dx=>{ ctx.fillStyle=CERT.gold; ctx.beginPath(); ctx.arc(cx+dx,y,2.2,0,2*Math.PI); ctx.fill(); });
+  ctx.restore();
+}
+// يصغّر الخط حتى يتّسع النص للعرض المتاح
+function fitFont(ctx,text,weight,size,family,maxW,minSize){
+  let s=size; ctx.font=`${weight} ${s}px ${family}`;
+  while(ctx.measureText(text).width>maxW && s>minSize){ s-=2; ctx.font=`${weight} ${s}px ${family}`; }
+  return s;
+}
+function wrapLines(ctx,text,maxW){
+  const words=text.split(' '), lines=[]; let line='';
+  for(const w of words){ const t=line?line+' '+w:w; if(ctx.measureText(t).width>maxW && line){ lines.push(line); line=w; } else line=t; }
+  if(line) lines.push(line);
+  return lines;
+}
+/* نص عربي على قوس دون كسر اتصال الحروف: يُرسم النص مستقيمًا على لوح جانبي
+   ثم يُنقل شرائح رأسية رفيعة على محيط الدائرة. top=true أعلى الختم (يُقرأ من الخارج)،
+   وfalse أسفله (يُقرأ معتدلًا من الداخل). */
+function arcText(ctx,text,font,color,cx,cy,R,top,S){
+  const m=document.createElement('canvas').getContext('2d'); m.font=font;
+  const tw=Math.ceil(m.measureText(text).width)+4, th=Math.ceil(parseFloat(font.match(/(\d+(?:\.\d+)?)px/)[1])*1.7);
+  const off=document.createElement('canvas'); off.width=Math.ceil(tw*S); off.height=Math.ceil(th*S);
+  const o=off.getContext('2d'); o.scale(S,S); o.font=font; o.fillStyle=color;
+  o.textAlign='center'; o.textBaseline='middle'; o.direction='rtl'; o.fillText(text,tw/2,th/2);
+  const span=tw/R, cols=off.width, dw=1.6/S;
+  for(let k=0;k<cols;k++){
+    const x=k/S;
+    const th0 = top ? (-Math.PI/2 - span/2 + x/R) : (Math.PI/2 + span/2 - x/R);
+    ctx.save();
+    ctx.translate(cx+R*Math.cos(th0), cy+R*Math.sin(th0));
+    ctx.rotate(top ? th0+Math.PI/2 : th0-Math.PI/2);
+    ctx.drawImage(off,k,0,1,off.height,-dw/2,-th/2,dw,th);
+    ctx.restore();
+  }
+}
+/* ختم مطاطي بحبر عنابي: حلقتان، نص دائري، نجمة ثمانية، «معتمد» والسنة الهجرية،
+   ثم ملمس حبر (نقاط فارغة، ضغط غير متساوٍ، انتشار خفيف) ودوران بسيط كالختم اليدوي. */
+function drawStamp(ctx,cx,cy,R,seed,year){
+  const S=CERT.S, pad=10, size=(R+pad)*2;
+  const off=document.createElement('canvas'); off.width=Math.ceil(size*S); off.height=Math.ceil(size*S);
+  const o=off.getContext('2d'); o.scale(S,S);
+  const c=size/2, ink=CERT.stamp;
+  o.strokeStyle=ink; o.fillStyle=ink;
+  o.shadowColor='rgba(142,28,59,0.45)'; o.shadowBlur=1.2;   // انتشار الحبر
+  o.lineWidth=4;   o.beginPath(); o.arc(c,c,R,0,2*Math.PI); o.stroke();
+  o.lineWidth=1.3; o.beginPath(); o.arc(c,c,R-7,0,2*Math.PI); o.stroke();
+  o.lineWidth=1.6; o.beginPath(); o.arc(c,c,R-31,0,2*Math.PI); o.stroke();
+  // حلقة نقاط
+  for(let i=0;i<60;i++){ const a=i*Math.PI/30; o.beginPath(); o.arc(c+(R-35)*Math.cos(a), c+(R-35)*Math.sin(a), .9,0,2*Math.PI); o.fill(); }
+  o.shadowBlur=0.6;
+  arcText(o, CERT.issuer, '700 17px "Reem Kufi", Tajawal, sans-serif', ink, c,c,R-19, true,  S);
+  arcText(o, CERT.motto,  '600 14px "Reem Kufi", Tajawal, sans-serif', ink, c,c,R-19, false, S);
+  // نجمتان صغيرتان على الجانبين
+  [0,Math.PI].forEach(a=>{ star8Path(o, c+(R-19)*Math.cos(a), c+(R-19)*Math.sin(a), 5); o.fill(); });
+  // المركز
+  o.lineWidth=1.4; star8Path(o,c,c,R-41); o.stroke();
+  o.textAlign='center'; o.direction='rtl';
+  o.font='700 25px "Aref Ruqaa", Amiri, serif'; o.textBaseline='middle'; o.fillText('معتمد',c,c-5);
+  o.font='700 11.5px Tajawal, sans-serif'; o.fillText(year? year+' هـ' : '', c, c+19);
+
+  // ملمس الحبر
+  const rnd=seededRandom(seed);
+  o.shadowBlur=0; o.globalCompositeOperation='destination-out';
+  const speck=(r0,alpha,rad)=>{ const a=rnd()*2*Math.PI, r=Math.sqrt(rnd())*r0;
+    o.fillStyle=`rgba(0,0,0,${alpha.toFixed(3)})`; o.beginPath(); o.arc(c+r*Math.cos(a), c+r*Math.sin(a), rad, 0, 2*Math.PI); o.fill(); };
+  for(let i=0;i<700;i++)  speck(R+2, rnd()*0.6, rnd()*0.7+0.15);        // مسام دقيقة
+  for(let i=0;i<34;i++)   speck(R,   0.12+rnd()*0.3, 2+rnd()*6);        // بقع حبر ناقص
+  for(let i=0;i<160;i++){ const a=rnd()*2*Math.PI, r=R-2+rnd()*4;       // تآكل الحافة الخارجية
+    o.fillStyle=`rgba(0,0,0,${(0.3+rnd()*0.6).toFixed(2)})`; o.beginPath(); o.arc(c+r*Math.cos(a), c+r*Math.sin(a), 0.6+rnd()*1.6, 0, 2*Math.PI); o.fill(); }
+  for(let i=0;i<7;i++){   // خدوش رفيعة
+    o.strokeStyle=`rgba(0,0,0,${(0.15+rnd()*0.25).toFixed(2)})`; o.lineWidth=0.5+rnd()*0.8;
+    const a=rnd()*2*Math.PI, l=20+rnd()*45, x=c+(rnd()-.5)*R*1.4, y=c+(rnd()-.5)*R*1.4;
+    o.beginPath(); o.moveTo(x,y); o.lineTo(x+l*Math.cos(a), y+l*Math.sin(a)); o.stroke();
+  }
+  const pa=rnd()*2*Math.PI;   // ضغط غير متساوٍ: جهة أفتح من الأخرى
+  const pg=o.createLinearGradient(c+R*Math.cos(pa),c+R*Math.sin(pa),c-R*Math.cos(pa),c-R*Math.sin(pa));
+  pg.addColorStop(0,'rgba(0,0,0,0.45)'); pg.addColorStop(.55,'rgba(0,0,0,0.05)'); pg.addColorStop(1,'rgba(0,0,0,0)');
+  o.fillStyle=pg; o.fillRect(0,0,size,size);
+  o.globalCompositeOperation='source-over';
+
+  ctx.save();
+  ctx.translate(cx,cy); ctx.rotate(-0.16 + (rnd()-.5)*0.06);
+  ctx.globalAlpha=0.86; ctx.globalCompositeOperation='multiply';
+  ctx.drawImage(off,-size/2,-size/2,size,size);
+  ctx.restore();
+}
+function infoBlock(ctx,x,y,label,lines){
+  ctx.save();
+  const g=ctx.createLinearGradient(x-120,0,x+120,0);
+  g.addColorStop(0,'rgba(176,141,76,0)'); g.addColorStop(.5,CERT.gold); g.addColorStop(1,'rgba(176,141,76,0)');
+  ctx.strokeStyle=g; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(x-120,y); ctx.lineTo(x+120,y); ctx.stroke();
+  ctx.textAlign='center'; ctx.direction='rtl';
+  ctx.fillStyle=CERT.goldDeep; ctx.font='700 16px Tajawal, sans-serif'; ctx.fillText(label,x,y+28);
+  lines.forEach((l,i)=>{ ctx.fillStyle=i? CERT.inkSoft : CERT.ink; ctx.font=(i?'500 15px':'500 18px')+' Tajawal, sans-serif'; ctx.fillText(l,x,y+56+i*24); });
   ctx.restore();
 }
 async function generateCertificate(){
   if(!RESULT.passed || RESULT.mode==='retry') return;
-  await ensureFonts();
-  const S=2, W=1400, H=990;
-  const cv=$('#cert-canvas'); cv.width=W*S; cv.height=H*S;
-  const ctx=cv.getContext('2d'); ctx.scale(S,S);
-  ctx.textAlign='center'; ctx.direction='rtl';
-  const cx=W/2;
+  const btn=$('#btn-cert'); btn.disabled=true;
+  try{
+    await ensureFonts();
+    const {W,H,S}=CERT, cx=W/2, now=new Date();
+    const cv=$('#cert-canvas'); cv.width=W*S; cv.height=H*S;
+    const ctx=cv.getContext('2d'); ctx.setTransform(S,0,0,S,0,0);
+    ctx.textAlign='center'; ctx.direction='rtl'; ctx.textBaseline='alphabetic';
 
-  // خلفية
-  ctx.fillStyle='#FBF7EE'; ctx.fillRect(0,0,W,H);
-  const g=ctx.createRadialGradient(cx,H*0.4,80,cx,H*0.4,W*0.7);
-  g.addColorStop(0,'rgba(154,123,66,0.05)'); g.addColorStop(1,'rgba(14,110,94,0.04)');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // الورق: لون كريمي مع تعتيم خفيف للأطراف
+    ctx.fillStyle=CERT.paper; ctx.fillRect(0,0,W,H);
+    const v=ctx.createRadialGradient(cx,H/2,H*0.25,cx,H/2,W*0.75);
+    v.addColorStop(0,'rgba(255,255,255,0.55)'); v.addColorStop(1,'rgba(214,196,156,0.35)');
+    ctx.fillStyle=v; ctx.fillRect(0,0,W,H);
+    drawPattern(ctx,66,66,W-132,H-132);
+    drawFrame(ctx);
 
-  // إطار مزدوج
-  ctx.strokeStyle='#9A7B42'; ctx.lineWidth=4; ctx.strokeRect(34,34,W-68,H-68);
-  ctx.strokeStyle='#C2A368'; ctx.lineWidth=1.5; ctx.strokeRect(48,48,W-96,H-96);
-  const corner=(x,y,sx,sy)=>{ ctx.save();ctx.translate(x,y);ctx.scale(sx,sy);ctx.strokeStyle='#9A7B42';ctx.lineWidth=2.5;
-    ctx.beginPath();ctx.moveTo(0,46);ctx.lineTo(0,8);ctx.quadraticCurveTo(0,0,8,0);ctx.lineTo(46,0);ctx.stroke();
-    ctx.beginPath();ctx.arc(20,20,5,0,2*Math.PI);ctx.fillStyle='#9A7B42';ctx.fill();ctx.restore(); };
-  corner(60,60,1,1); corner(W-60,60,-1,1); corner(60,H-60,1,-1); corner(W-60,H-60,-1,-1);
+    // الشعار
+    if(logoImg && !logoImg.complete){ await new Promise(r=>{logoImg.onload=r; logoImg.onerror=r;}); }
+    let y=170;   // أسفل الشعار (احتياط إن لم يُحمَّل)
+    try{ if(logoImg && logoImg.naturalWidth){ const lw=98, lh=lw*logoImg.naturalHeight/logoImg.naturalWidth; ctx.drawImage(logoImg, cx-lw/2, 78, lw, lh); y=78+lh; } }catch(e){}
 
-  // الشعار في الأعلى
-  if(logoImg && !logoImg.complete){ await new Promise(r=>{logoImg.onload=r; logoImg.onerror=r;}); }
-  try{ if(logoImg && logoImg.naturalWidth){ const lw=134, lh=lw*logoImg.naturalHeight/logoImg.naturalWidth; ctx.drawImage(logoImg, cx-lw/2, 56, lw, lh); } }catch(e){}
+    // التباعد يُحسب من القياس الفعلي لصعود الحروف ونزولها؛ ذيول خط الرقعة طويلة
+    const box=t=>{ const m=ctx.measureText(t); return { up:m.actualBoundingBoxAscent||0, down:m.actualBoundingBoxDescent||0 }; };
 
-  // العناوين
-  ctx.fillStyle='#16221F';
-  ctx.font='700 46px Amiri, serif';
-  ctx.fillText('شهادة إتمام اختبار',cx,234);
-  ctx.fillStyle='#6B5526';
-  ctx.font='400 26px Amiri, serif';
-  ctx.fillText(SUBJECT.title,cx,272);
-  // فاصل
-  ctx.strokeStyle='#C2A368'; ctx.lineWidth=1.4;
-  ctx.beginPath(); ctx.moveTo(cx-170,296); ctx.lineTo(cx+170,296); ctx.stroke();
-  ctx.fillStyle='#C2185B'; ctx.beginPath(); ctx.arc(cx,296,4.5,0,2*Math.PI); ctx.fill();
+    // العنوان
+    const TITLE='شهادة إتمام';
+    ctx.font='700 64px "Aref Ruqaa", Amiri, serif';
+    const tb=box(TITLE), titleY=y+20+tb.up;
+    const tg=ctx.createLinearGradient(cx-200,0,cx+200,0);
+    tg.addColorStop(0,'#6B5122'); tg.addColorStop(.35,'#A9853F'); tg.addColorStop(.5,'#8A6A2E'); tg.addColorStop(.65,'#A9853F'); tg.addColorStop(1,'#6B5122');
+    ctx.fillStyle=tg; ctx.fillText(TITLE,cx,titleY);
 
-  ctx.fillStyle='#3A4A45';
-  ctx.font='500 23px Tajawal, sans-serif';
-  ctx.fillText('تشهد هذه الشهادة بأنّ',cx,350);
+    // اسم المادة تحت العنوان، بعد نزول الحروف بمسافة واضحة
+    ctx.font='400 24px Amiri, serif';
+    const sb=box(SUBJECT.title), subY=titleY+tb.down+18+sb.up;
+    ctx.fillStyle=CERT.teal; ctx.fillText(SUBJECT.title,cx,subY);
+    const div1=subY+sb.down+20;
+    ornamentDivider(ctx,cx,div1,230);
 
-  // الاسم
-  ctx.fillStyle='#0E6E5E';
-  ctx.font='700 54px Amiri, serif';
-  ctx.fillText(RESULT.name,cx,420);
-  ctx.strokeStyle='#E4DBC6'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(cx-260,444); ctx.lineTo(cx+260,444); ctx.stroke();
+    // المستفيد — صياغة محايدة تصلح للذكر والأنثى
+    ctx.fillStyle=CERT.inkSoft; ctx.font='500 21px Tajawal, sans-serif';
+    const leadY=div1+44;
+    ctx.fillText('تُمنح هذه الشهادة إلى',cx,leadY);
+    fitFont(ctx,RESULT.name,700,66,'"Aref Ruqaa", Amiri, serif',820,36);
+    const nb=box(RESULT.name), nameY=leadY+18+nb.up;
+    ctx.fillStyle=CERT.tealDeep; ctx.fillText(RESULT.name,cx,nameY);
+    const div2=nameY+nb.down+16;
+    ornamentDivider(ctx,cx,div2,300);
 
-  ctx.fillStyle='#3A4A45';
-  ctx.font='500 23px Tajawal, sans-serif';
-  ctx.fillText('قد أتمّ بنجاح اختبار',cx,498);
-  ctx.fillStyle='#16221F';
-  ctx.font='700 29px Tajawal, sans-serif';
-  wrapText(ctx, RESULT.chapter, cx, 538, W-260, 38);
+    ctx.fillStyle=CERT.inkSoft; ctx.font='500 21px Tajawal, sans-serif';
+    ctx.fillText('تقديرًا لإتمام اختبار',cx,div2+44);
+    ctx.fillStyle=CERT.ink; ctx.font='700 31px Amiri, serif';
+    const chLines=wrapLines(ctx,RESULT.chapter,960).slice(0,2);
+    chLines.forEach((l,i)=>ctx.fillText(l,cx,div2+86+i*40));
+    const extra=(chLines.length-1)*40;
 
-  // النتيجة — بطاقة
-  const by=606;
-  ctx.fillStyle='#0E6E5E';
-  roundRect(ctx,cx-300,by,600,94,16); ctx.fill();
-  ctx.fillStyle='#C2A368'; ctx.font='700 21px Tajawal, sans-serif';
-  ctx.fillText('الدرجة',cx-200,by+36); ctx.fillText('النسبة',cx,by+36); ctx.fillText('التقدير',cx+200,by+36);
-  ctx.fillStyle='#FBF7EE'; ctx.font='700 33px Amiri, serif';
-  ctx.fillText(arDigits(RESULT.correct)+' / '+arDigits(RESULT.total),cx-200,by+74);
-  ctx.fillText(arDigits(RESULT.pct)+'%',cx,by+74);
-  ctx.fillText(RESULT.grade,cx+200,by+74);
+    // النتيجة: ثلاث خانات بإطار ذهبي رفيع
+    const by=div2+118+extra, bw=600, bh=84, bx=cx-bw/2;
+    ctx.save();
+    ctx.fillStyle='rgba(255,255,255,0.6)'; roundRect(ctx,bx,by,bw,bh,12); ctx.fill();
+    ctx.strokeStyle=CERT.gold; ctx.lineWidth=1.3; roundRect(ctx,bx,by,bw,bh,12); ctx.stroke();
+    ctx.strokeStyle='rgba(176,141,76,0.45)'; ctx.lineWidth=1;
+    [bx+bw/3,bx+2*bw/3].forEach(x=>{ ctx.beginPath(); ctx.moveTo(x,by+14); ctx.lineTo(x,by+bh-14); ctx.stroke(); });
+    const cells=[['التقدير',RESULT.grade],['النسبة',arDigits(RESULT.pct)+'٪'],['الدرجة',arDigits(RESULT.correct)+' من '+arDigits(RESULT.total)]];
+    cells.forEach(([l,val],i)=>{
+      const x=bx+bw - (i+0.5)*bw/3;   // من اليمين إلى اليسار
+      ctx.fillStyle=CERT.goldDeep; ctx.font='700 15px Tajawal, sans-serif'; ctx.fillText(l,x,by+30);
+      ctx.fillStyle=CERT.teal; ctx.font='700 30px Amiri, serif'; ctx.fillText(val,x,by+67);
+    });
+    ctx.restore();
 
-  // التاريخ
-  const now=new Date();
-  ctx.fillStyle='#7C8A85'; ctx.font='400 20px Tajawal, sans-serif';
-  const hd=hijriDate(now), gd=gregDate(now);
-  ctx.fillText(hd? (hd+'  —  '+gd) : gd, cx, 772);
+    // التذييل: التاريخ يمينًا، الختم وسطًا، جهة الإصدار والرقم المرجعي يسارًا
+    // التذييل في مكانه الثابت ما أمكن، ويُدفع لأسفل عند طول المحتوى دون تجاوز الإطار
+    const fy=Math.min(812, Math.max(790, by+bh+52));
+    const ref=certRef(RESULT,now);
+    const hd=hijriDate(now), gd=gregDate(now);
+    infoBlock(ctx, W-330, fy, 'تاريخ الإصدار', hd? [hd,gd] : [gd]);
+    infoBlock(ctx, 330, fy, 'جهة الإصدار', [CERT.issuer+' — '+CERT.motto, 'الرقم المرجعي: '+ref]);
+    drawStamp(ctx, cx, fy+30, 78, hashStr(ref), hijriYear(now));
 
-  // الختم السفلي
-  drawRosette(ctx,cx,856,32,'#9A7B42');
-  ctx.fillStyle='#6B5526'; ctx.font='700 16px Tajawal, sans-serif';
-  ctx.fillText('ختم الإنجاز',cx,906);
-
-  // تنزيل
-  const safe = (RESULT.name+' - '+RESULT.chapter).replace(/[\\/:*?"<>|]/g,'').slice(0,80);
-  const a=document.createElement('a');
-  a.download='شهادة '+safe+'.png';
-  a.href=cv.toDataURL('image/png');
-  a.click();
+    // تنزيل
+    const safe=(RESULT.name+' - '+RESULT.chapter).replace(/[\\/:*?"<>|]/g,'').slice(0,80);
+    const blob = await new Promise(r=>cv.toBlob(r,'image/png'));
+    const a=document.createElement('a');
+    a.download='شهادة '+safe+'.png';
+    a.href = blob ? URL.createObjectURL(blob) : cv.toDataURL('image/png');
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ a.remove(); if(blob) URL.revokeObjectURL(a.href); },4000);
+  }catch(e){
+    console.error('تعذّر إنشاء الشهادة', e);
+    alert('تعذّر إنشاء الشهادة. أعد المحاولة.');
+  }finally{ btn.disabled=false; }
 }
 function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
-function wrapText(ctx,text,x,y,maxW,lh){
-  const words=text.split(' '); let line='',yy=y;
-  for(const w of words){ const t=line?line+' '+w:w; if(ctx.measureText(t).width>maxW && line){ ctx.fillText(line,x,yy); line=w; yy+=lh; } else line=t; }
-  ctx.fillText(line,x,yy);
-}
 
 /* ============ إعادة ============ */
 function restart(){

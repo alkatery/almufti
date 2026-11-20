@@ -117,11 +117,17 @@ function saveProgress(){
 }
 function clearProgress(){ try{ localStorage.removeItem(PROGRESS_KEY); }catch(e){} }
 // يعيد بناء الاختبار المحفوظ، ويرفضه إن تغيّرت البيانات منذ حفظه
+/* العناوين القديمة للأقسام (aliases في data/*.js) تُردّ إلى العنوان الحالي،
+   كي تبقى النتائج والتقدّم المحفوظ قبل إعادة التسمية مرتبطة بقسمها. */
+const CHAPTER_ALIAS={};
+EXAM_DATA.forEach(c=>(c.aliases||[]).forEach(a=>{ CHAPTER_ALIAS[a]=c.title; }));
+function canonicalChapter(t){ return CHAPTER_ALIAS[t]||t; }
 function readProgress(){
   let p; try{ p=JSON.parse(localStorage.getItem(PROGRESS_KEY)||'null'); }catch(e){ p=null; }
   if(!p || p.v!==1 || !Array.isArray(p.items) || !p.items.length) return null;
   const ch = EXAM_DATA[p.chapter];
-  if(Date.now()-p.ts > PROGRESS_TTL || !ch || ch.title!==p.chapterTitle){ clearProgress(); return null; }
+  if(Date.now()-p.ts > PROGRESS_TTL || !ch || canonicalChapter(p.chapterTitle)!==ch.title){ clearProgress(); return null; }
+  p.chapterTitle=ch.title;
   const qs=[];
   for(const it of p.items){
     const src = ch.questions[it.qi];
@@ -787,6 +793,7 @@ async function loadAndRender(){
   const note=$('#stats-note'); note.textContent='…جارٍ التحميل'; note.classList.remove('err');
   try{
     STATS_DATA = await loadAttempts();
+    STATS_DATA.forEach(r=>{ if(rowSubject(r)===SUBJECT_KEY && r.chapter) r.chapter=canonicalChapter(r.chapter); });
     const chip=$('#conn-chip');
     chip.textContent = CLOUD_ON()? 'متصل بالسحابة' : 'محلي (هذا الجهاز فقط)';
     chip.className = 'chip '+(CLOUD_ON()?'chip-ok':'chip-warn');
